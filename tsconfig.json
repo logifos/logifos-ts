@@ -1,17 +1,18 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
-    "noEmit": true,
     "lib": [
       "ES2022",
       "dom"
     ],
     "types": [
       "node"
-    ]
+    ],
+    "rootDir": ".",
+    "outDir": ".test-build"
   },
   "include": [
     "src",

@@ -1,5 +1,6 @@
 // Fresh Logifos package-consumer check, licensed under MIT.
 import assert from "node:assert/strict";
+import { checkBrowser } from "./browser-smoke.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,3 +72,7 @@ execFileSync(process.execPath, [
   "--project", join(consumer, "tsconfig.json"),
 ], { cwd: consumer, env, stdio: "inherit" });
 console.log(`Installed declarations: positive and negative type checks passed; ${pack.files.length} package files`);
+
+if (process.argv.includes("--browser")) {
+  await checkBrowser(consumer, scratch);
+}

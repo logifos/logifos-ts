@@ -8,13 +8,12 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "prepack": "npm run build",
-    "test": "vitest run",
+    "test": "tsc --project tsconfig.json && node --test .test-build/test/*.spec.js",
     "test:package": "node test/package-smoke.mjs",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
     "@types/node": "^22.0.0"
   },
   "types": "./dist/index.d.ts",
@@ -29,5 +28,8 @@
     "dist",
     "LICENSE.txt",
     "README.md"
-  ]
+  ],
+  "engines": {
+    "node": ">=22"
+  }
 }
