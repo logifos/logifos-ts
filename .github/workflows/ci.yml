@@ -5,11 +5,19 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      CORE_REV: 7e33e20becb49f3dbf8eab786fe7d97bf82939f7
+      WASM_CONTRACT_DIR: ${{ github.workspace }}/.ci/contracts/contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -17,4 +25,36 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - name: Check out pinned WASM core
+        uses: actions/checkout@v4
+        with:
+          repository: logifos/logifos-rs
+          ref: ${{ env.CORE_REV }}
+          path: .ci/core
+          persist-credentials: false
+      - name: Check out pinned wire contracts
+        uses: actions/checkout@v4
+        with:
+          repository: logifos/logifos-rs
+          ref: d847288ae655673baa8d645e9338afe5ca34506b
+          path: .ci/contracts
+          persist-credentials: false
+      - name: Install WASM toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup target add --toolchain 1.95.0 wasm32-unknown-unknown
+      - name: Install pinned wasm-bindgen CLI
+        run: rustup run 1.95.0 cargo install wasm-bindgen-cli --version 0.2.105 --locked -j 2 --root "${RUNNER_TEMP}/wasm-tools"
+      - name: Build verified WASM artifact
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
+          RUSTC_WRAPPER: ${{ github.workspace }}/scripts/wasm-rustc.sh
+          WASM_CORE_DIR: ${{ github.workspace }}/.ci/core
+          WASM_BINDGEN: ${{ runner.temp }}/wasm-tools/bin/wasm-bindgen
+          LOGIFOS_WASM_ARTIFACT: ${{ runner.temp }}/logifos-wasm
+        run: |
+          rustup run 1.95.0 cargo fetch --locked --manifest-path .ci/core/Cargo.toml
+          bash .ci/core/scripts/build-wasm.sh "$LOGIFOS_WASM_ARTIFACT"
       - run: npm run test:package -- --browser
+        env:
+          LOGIFOS_WASM_ARTIFACT: ${{ runner.temp }}/logifos-wasm
