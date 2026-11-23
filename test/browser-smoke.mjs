@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve, sep } from "node:path";
-import { promisify } from "node:util";
 
 export async function checkBrowser(consumer, scratch, artifactDirectory) {
   const page = `<!doctype html><body><script type="module">
@@ -20,10 +20,21 @@ try {
     document.body.dataset.result = "passed";
   }
 } catch (error) { document.body.textContent = String(error); }
+finally { await fetch("/result", { method: "POST", body: document.documentElement.outerHTML }); }
 </script>`;
   const dist = join(consumer, "node_modules/logifos-ts/dist");
+  let complete;
+  const completion = new Promise(resolve => { complete = resolve; });
   const server = createServer(async (request, response) => {
     try {
+      if (request.url === "/result" && request.method === "POST") {
+        let dom = "";
+        request.setEncoding("utf8");
+        for await (const chunk of request) dom += chunk;
+        response.end();
+        complete(dom);
+        return;
+      }
       if (request.url === "/") { response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end(page); return; }
       const route = new URL(request.url, "http://localhost").pathname;
       const [root, suffix] = route.startsWith("/dist/") ? [dist, route.slice(6)] :
@@ -36,15 +47,38 @@ try {
     } catch { response.writeHead(404); response.end(); }
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  let chrome;
+  let closed;
+  let timer;
+  let stderr = "";
   try {
-    const { stdout } = await promisify(execFile)(process.env.CHROME_BIN || "google-chrome", [
+    // Virtual time can expire while asynchronous initialization is still pending.
+    // Keep Chrome alive until the page reports completion, bounded by real time.
+    chrome = spawn(process.env.CHROME_BIN || "google-chrome", [
       "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-      `--user-data-dir=${join(scratch, "chrome-profile")}`, "--dump-dom", "--virtual-time-budget=5000",
+      `--user-data-dir=${join(scratch, "chrome-profile")}`,
       `http://127.0.0.1:${server.address().port}/`,
-    ], { timeout: 30000, maxBuffer: 1024 * 1024 });
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    chrome.stderr.setEncoding("utf8");
+    chrome.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-65536); });
+    closed = once(chrome, "close");
+    const stdout = await Promise.race([
+      completion,
+      closed.then(([code, signal]) => { throw Error(`Chrome exited before browser completion (${code ?? signal}): ${stderr}`); }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error(`Browser smoke timed out waiting for page completion: ${stderr}`)), 30000);
+      }),
+    ]);
     assert.match(stdout, /<body data-result="passed">/, "Browser installed-package smoke failed");
     console.log("Browser installed-package transport smoke passed");
   } finally {
+    clearTimeout(timer);
+    if (chrome) {
+      const killTimer = setTimeout(() => chrome.kill("SIGKILL"), 5000);
+      chrome.kill();
+      await closed.catch(() => {});
+      clearTimeout(killTimer);
+    }
     await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 }
