@@ -1,46 +1,77 @@
 # logifos-ts
 
-logifos-ts is a bootstrap package for a math formula rendering API. It exports
-`render` and `NotImplementedError` as JavaScript ES modules with TypeScript
-declarations. There is no WASM renderer yet: every call to `render` throws
-`NotImplementedError`, and no SVG or PNG output is produced.
+logifos-ts is the bootstrap TypeScript package for the logifos math formula
+renderer. It builds and packs as a JavaScript ES module with TypeScript
+declarations. It does not render formulas yet.
 
-The declared API is `render(formula, format)`, where `formula` has type `unknown`
-and `format` is either `"svg"` or `"png"`, defaulting to `"svg"`. Its declared
-return type is `Uint8Array`, but rendering is not implemented.
+## Current API
 
-Use Node.js 22 or newer. From a checkout of this repository, install the
-development dependencies and build the package with:
+The package exports `render` and `NotImplementedError`. The declared signature is
+`render(formula: unknown, format: "svg" | "png" = "svg"): Uint8Array`.
+
+Every call to `render` throws `NotImplementedError`, including calls with the
+default format, `"svg"`, or `"png"`. The return type describes the intended byte
+output; no bytes are returned today. The input is not validated or converted.
+There is no engine integration, WASM binary, SVG output, or PNG output in this
+package.
+
+## Build and pack
+
+The package declares Node.js 22 or newer. The commands below were checked with
+Node.js 24.22.2 and npm 11.19.1. Run them from the repository checkout:
 
 ```sh
 npm ci
 npm run build
+npm pack
 ```
 
-The build writes JavaScript and TypeScript declarations to `dist/`. The package
-entry point is `dist/index.js`, with declarations in `dist/index.d.ts`.
+The build emits `dist/index.js` and `dist/index.d.ts`. Packing runs the build
+again through `prepack` and writes `logifos-ts-0.1.0.tgz`. The tarball contains
+those two emitted files, `package.json`, `README.md`, and `LICENSE.txt`.
 
-Run the checks from the same checkout:
+To check the emitted JavaScript exports directly after building:
+
+```sh
+node --input-type=module -e \
+  'import { render, NotImplementedError } from "./dist/index.js"; console.log(typeof render, typeof NotImplementedError);'
+```
+
+This prints `function function`. Importing succeeds; calling `render` still
+throws. The package checks below also import `logifos-ts` by name from an
+installed tarball.
+
+## Checks
 
 ```sh
 npm run typecheck
 npm test
 npm run test:package
-```
-
-The type check compiles without writing output. The test command compiles source
-and tests into `.test-build/`, then runs the emitted JavaScript with Node's test
-runner to check that rendering throws `NotImplementedError`. The package check
-builds and packs a tarball, installs it in a temporary consumer, checks the
-exported API and refusal behavior, and checks valid and invalid TypeScript usage
-against the installed declarations.
-
-To check the installed module in headless Chrome as well, run:
-
-```sh
 npm run test:package -- --browser
 ```
 
-This requires Chrome available as `google-chrome`, or its executable path set in
-`CHROME_BIN`. The browser check verifies module imports and the same refusal
-behavior. These checks verify the bootstrap package; they do not render formulas.
+The type check writes no output files. The unit test compiles source and tests
+into `.test-build/`, then runs the emitted JavaScript with Node's test runner.
+It checks that `render` throws `NotImplementedError`.
+
+The package check packs a tarball, checks its five files, and installs it into a
+temporary consumer. It imports the installed package, checks both exports and
+three refusal cases (default, SVG, and PNG), and checks accepted and rejected
+TypeScript usage against the installed declarations.
+
+The browser variant repeats the package check and serves the installed
+JavaScript module to headless Chrome. It checks the exports and the same three
+refusal cases in the browser. Chrome must be available as `google-chrome`, or
+`CHROME_BIN` must point to its executable. These checks cover the bootstrap
+module and declarations; they do not test rendering.
+
+## Planned runtime
+
+The planned rendering path passes formula models through a WASM build of the
+logifos engine and returns rendered bytes. Node and web runtime boundaries,
+including WASM loading and initialization, are future work. SVG and PNG remain
+unimplemented despite appearing in the declared API.
+
+There is currently one shared ES module entry. Separate Node and web entry
+points and a working WASM runtime are not available. The browser import check
+above verifies only the current bootstrap module.
